@@ -26,7 +26,7 @@ memory_collection = chroma_client.get_or_create_collection(name="user_memories")
 
 # 2. Connect to Your Fine-Tuned Model on Hugging Face using secure environment variables
 HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL_ID = "sniggy2708/Echo-Llama-3.2-3B"
+MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"
 
 client = InferenceClient(token=HF_TOKEN)
 print(f"System Ready. Connected to custom model: {MODEL_ID}")
