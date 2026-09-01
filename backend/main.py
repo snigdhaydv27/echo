@@ -12,10 +12,9 @@ load_dotenv()
 
 app = FastAPI()
 
-# Allow both your local frontend and your deployed frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -25,12 +24,16 @@ app.add_middleware(
 chroma_client = chromadb.PersistentClient(path="./agent_memory")
 memory_collection = chroma_client.get_or_create_collection(name="user_memories")
 
-# 2. Connect to the guaranteed free-tier model
+# 2. Use a top-tier open model guaranteed to be on HF's free infrastructure
 HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL_ID = "HuggingFaceH4/zephyr-7b-beta"
+MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
 
-client = InferenceClient(token=HF_TOKEN)
-print(f"System Ready. Connected to open model: {MODEL_ID}")
+# 3. CRITICAL FIX: Use api_key and explicitly lock the provider to the free tier
+client = InferenceClient(
+    api_key=HF_TOKEN,
+    provider="hf-inference"
+)
+print(f"System Ready. Connected to free-tier model: {MODEL_ID}")
 
 class ChatRequest(BaseModel):
     message: str
