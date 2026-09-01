@@ -37,7 +37,7 @@ export default function Home() {
     
     // Wipe backend short-term memory buffer
     try {
-      await fetch("http://localhost:8000/api/clear", { method: "POST" });
+      await fetch("https://echo-backend-6n38.onrender.com", { method: "POST" });
     } catch (e) {
       console.error("Failed to clear backend memory", e);
     }
