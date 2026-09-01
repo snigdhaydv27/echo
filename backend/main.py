@@ -5,6 +5,7 @@ from huggingface_hub import InferenceClient
 import chromadb
 import uuid
 import os
+import time
 from dotenv import load_dotenv
 
 # Load environment variables from a local .env file
@@ -27,10 +28,7 @@ memory_collection = chroma_client.get_or_create_collection(name="user_memories")
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL_ID = "sniggy2708/Echo-Llama-3.2-3B"
 
-client = InferenceClient(
-    model=MODEL_ID,
-    token=HF_TOKEN
-)
+client = InferenceClient(token=HF_TOKEN)
 print(f"System Ready. Connected to custom model: {MODEL_ID}")
 
 class ChatRequest(BaseModel):
@@ -41,6 +39,24 @@ chat_history = []
 @app.get("/health")
 def health_check():
     return {"status": "alive"}
+
+def safe_chat_completion(messages, max_tokens=250, temperature=0.3):
+    """Retries model invocation to handle custom model cold starts gracefully."""
+    for attempt in range(3):
+        try:
+            response = client.chat_completion(
+                model=MODEL_ID,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"Attempt {attempt + 1} model loading/waking up: {e}")
+            if attempt < 2:
+                time.sleep(10)
+            else:
+                raise e
 
 def extract_and_memorize(user_input: str):
     """Runs silently in the background to extract factual memory."""
@@ -60,12 +76,7 @@ def extract_and_memorize(user_input: str):
     ]
 
     try:
-        response = client.chat_completion(
-            messages=messages,
-            max_tokens=150,
-            temperature=0.1
-        )
-        fact = response.choices[0].message.content.strip()
+        fact = safe_chat_completion(messages, max_tokens=150, temperature=0.1)
 
         if fact and "NONE" not in fact.upper():
             memory_collection.add(
@@ -108,12 +119,7 @@ def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks):
     messages.append({"role": "user", "content": request.message})
 
     try:
-        response = client.chat_completion(
-            messages=messages,
-            max_tokens=250,
-            temperature=0.3
-        )
-        response_text = response.choices[0].message.content.strip()
+        response_text = safe_chat_completion(messages, max_tokens=250, temperature=0.3)
     except Exception as e:
         print(f"Inference error: {e}")
         response_text = "The AI model is currently waking up or encountered an issue. Please try again in a few seconds."
