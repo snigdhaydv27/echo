@@ -1,17 +1,16 @@
 from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from huggingface_hub import InferenceClient
 import chromadb
 import uuid
 import os
 import time
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,20 +19,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. Initialize Long-Term Vector Memory
 chroma_client = chromadb.PersistentClient(path="./agent_memory")
 memory_collection = chroma_client.get_or_create_collection(name="user_memories")
 
-# 2. Use a top-tier open model guaranteed to be on HF's free infrastructure
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
-
-# 3. CRITICAL FIX: Use api_key and explicitly lock the provider to the free tier
-client = InferenceClient(
-    api_key=HF_TOKEN,
-    provider="hf-inference"
-)
-print(f"System Ready. Connected to free-tier model: {MODEL_ID}")
+API_URL = f"https://api-inference.huggingface.co/models/{MODEL_ID}/v1/chat/completions"
 
 class ChatRequest(BaseModel):
     message: str
@@ -44,22 +35,36 @@ chat_history = []
 def health_check():
     return {"status": "alive"}
 
-def safe_chat_completion(messages, max_tokens=250, temperature=0.3):
+def safe_chat_completion(messages, max_tokens=250):
+    # 1. Catch missing Render token instantly
+    if not HF_TOKEN:
+        return "FATAL ERROR: HF_TOKEN is missing. You must add it in the Render Dashboard Environment Variables."
+
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": MODEL_ID,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.3
+    }
+
+    # 2. Raw HTTP request to completely bypass SDK routing bugs
     for attempt in range(3):
         try:
-            response = client.chat_completion(
-                model=MODEL_ID,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            print(f"Attempt {attempt + 1} failed: {e}")
-            if attempt < 2:
-                time.sleep(2)
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+            if response.status_code == 200:
+                return response.json()["choices"][0]["message"]["content"].strip()
+            elif response.status_code == 503:
+                time.sleep(3)  # Wait for model to wake up
             else:
-                raise e
+                return f"HF API ERROR {response.status_code}: {response.text}"
+        except Exception as e:
+            return f"SERVER ERROR: {str(e)}"
+    
+    return "ERROR: Timeout after 3 attempts."
 
 def extract_and_memorize(user_input: str):
     system_prompt = (
@@ -71,22 +76,21 @@ def extract_and_memorize(user_input: str):
         "Example Input: 'ok'\n"
         "Example Output: NONE"
     )
-
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_input}
     ]
-
-    try:
-        fact = safe_chat_completion(messages, max_tokens=150, temperature=0.1)
-        if fact and "NONE" not in fact.upper():
+    
+    fact = safe_chat_completion(messages, max_tokens=150)
+    if fact and "NONE" not in fact.upper() and "ERROR" not in fact:
+        try:
             memory_collection.add(
                 documents=[fact],
                 ids=[str(uuid.uuid4())]
             )
             print(f"🧠 AUTO-LEARNED: {fact}")
-    except Exception as e:
-        print(f"Extraction failed: {e}")
+        except:
+            pass
 
 @app.post("/api/chat")
 def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks):
@@ -117,18 +121,16 @@ def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks):
         messages.append({"role": msg['role'], "content": msg['content']})
     messages.append({"role": "user", "content": request.message})
 
-    try:
-        response_text = safe_chat_completion(messages, max_tokens=250, temperature=0.3)
-    except Exception as e:
-        print(f"Inference error: {e}")
-        response_text = "The AI model encountered an issue. Please try again."
+    # 3. Output the exact string (success or error) directly to PowerShell
+    response_text = safe_chat_completion(messages, max_tokens=250)
 
-    chat_history.append({"role": "user", "content": request.message})
-    chat_history.append({"role": "assistant", "content": response_text})
-    if len(chat_history) > 10:
-        chat_history = chat_history[-10:]
+    if "ERROR" not in response_text:
+        chat_history.append({"role": "user", "content": request.message})
+        chat_history.append({"role": "assistant", "content": response_text})
+        if len(chat_history) > 10:
+            chat_history = chat_history[-10:]
+        background_tasks.add_task(extract_and_memorize, request.message)
 
-    background_tasks.add_task(extract_and_memorize, request.message)
     return {"reply": response_text}
 
 @app.post("/api/clear")
