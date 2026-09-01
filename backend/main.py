@@ -24,7 +24,7 @@ memory_collection = chroma_client.get_or_create_collection(name="user_memories")
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
-API_URL = f"https://api-inference.huggingface.co/models/{MODEL_ID}/v1/chat/completions"
+API_URL = "https://router.huggingface.co/hf-inference/v1/chat/completions"
 
 class ChatRequest(BaseModel):
     message: str
