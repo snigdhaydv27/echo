@@ -41,16 +41,27 @@ def health_check():
     return {"status": "alive"}
 
 def safe_chat_completion(messages, max_tokens=250, temperature=0.3):
-    """Retries model invocation to handle custom model cold starts gracefully."""
+    """Retries model invocation and manually formats prompts for custom models."""
+    
+    # Manually format the chat history into Llama 3's required prompt structure
+    prompt = "<|begin_of_text|>"
+    for msg in messages:
+        role = msg["role"]
+        content = msg["content"]
+        prompt += f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
+    prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
+
     for attempt in range(3):
         try:
-            response = client.chat_completion(
+            # Use text_generation instead of chat_completion to bypass the error
+            response = client.text_generation(
+                prompt=prompt,
                 model=MODEL_ID,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature
+                max_new_tokens=max_tokens,
+                temperature=temperature,
+                return_full_text=False # Ensures it only returns the AI's reply, not the prompt
             )
-            return response.choices[0].message.content.strip()
+            return response.strip()
         except Exception as e:
             print(f"Attempt {attempt + 1} model loading/waking up: {e}")
             if attempt < 2:
