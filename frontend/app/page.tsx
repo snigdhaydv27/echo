@@ -5,6 +5,7 @@ import ChatArea from "../components/ChatArea";
 import { ChatSession } from "../types";
 import { v4 as uuidv4 } from "uuid";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export default function Home() {
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string>("");
@@ -37,7 +38,7 @@ export default function Home() {
     
     // Wipe backend short-term memory buffer
     try {
-      await fetch("https://echo-backend-6n38.onrender.com", { method: "POST" });
+      await fetch(`${API_URL}/api/clear`, { method: "POST" });
     } catch (e) {
       console.error("Failed to clear backend memory", e);
     }
@@ -63,7 +64,7 @@ export default function Home() {
     setChats(updatedChats);
 
     try {
-      const res = await fetch("http://localhost:8000/api/chat", {
+      const res = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMessage }),

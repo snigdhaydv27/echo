@@ -38,6 +38,10 @@ class ChatRequest(BaseModel):
 
 chat_history = []
 
+@app.get("/health")
+def health_check():
+    return {"status": "alive"}
+
 def extract_and_memorize(user_input: str):
     """Runs silently in the background to extract factual memory."""
     system_prompt = (
