@@ -23,7 +23,7 @@ chroma_client = chromadb.PersistentClient(path="./agent_memory")
 memory_collection = chroma_client.get_or_create_collection(name="user_memories")
 
 HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
+MODEL_ID = "microsoft/Phi-3-mini-4k-instruct"
 API_URL = "https://router.huggingface.co/v1/chat/completions"
 
 class ChatRequest(BaseModel):
